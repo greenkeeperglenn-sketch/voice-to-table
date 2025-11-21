@@ -1,9 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import OpenAI from 'openai';
-
-// Inline storage
-const chatMessages: { session_id: string; role: string; content: string; created_at: string }[] = [];
-const workLogs: any[] = [];
+import * as demo from './lib/demo-storage';
+import { WorkLog } from './lib/types';
 
 function generateId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -169,7 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { session_id } = req.query;
 
     if (req.method === 'GET' && session_id && typeof session_id === 'string') {
-      return res.status(200).json(chatMessages.filter(m => m.session_id === session_id));
+      return res.status(200).json(demo.getChatHistory(session_id));
     }
 
     if (req.method === 'POST') {
@@ -181,14 +179,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const currentDate = new Date().toISOString().split('T')[0];
       const now = new Date().toISOString();
 
-      // Get existing logs for this session
-      const sessionLogs = workLogs.filter(l => l.session_id === sid);
+      // Get existing logs for this session (from shared storage)
+      const sessionLogs = demo.getWorkLogsBySession(sid);
 
-      // Store user message
-      chatMessages.push({ session_id: sid, role: 'user', content: message, created_at: now });
+      // Store user message in shared storage
+      demo.addChatMessage({ session_id: sid, role: 'user', content: message });
 
       // Get chat history for this session
-      const history = chatMessages.filter(m => m.session_id === sid);
+      const history = demo.getChatHistory(sid);
 
       // Process with OpenAI or fallback
       let response;
@@ -203,31 +201,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         response = processFallback(message, currentDate, staff, sessionLogs);
       }
 
-      // Store assistant response
-      chatMessages.push({ session_id: sid, role: 'assistant', content: response.message, created_at: new Date().toISOString() });
+      // Store assistant response in shared storage
+      demo.addChatMessage({ session_id: sid, role: 'assistant', content: response.message });
 
       // Handle extracted work logs
-      const newLogs = [];
+      const newLogs: WorkLog[] = [];
       if (response.extracted_logs?.length > 0) {
         for (const log of response.extracted_logs) {
           // Check if we should update existing or create new
           if (log.update_existing && sessionLogs.length > 0) {
             const lastLog = sessionLogs[sessionLogs.length - 1];
-            Object.assign(lastLog, {
+            demo.updateWorkLog(lastLog.id, {
               ...log,
               task_description: lastLog.task_description ? `${lastLog.task_description}. ${log.task_description || ''}` : log.task_description,
               staff
             });
           } else {
-            const fullLog = {
+            const fullLog: WorkLog = {
               id: generateId(),
               session_id: sid,
               date: log.date || currentDate,
               staff,
-              ...log,
+              area: log.area,
+              task_type: log.task_type,
+              task_description: log.task_description,
+              machine: log.machine,
+              duration_minutes: log.duration_minutes,
+              height_mm: log.height_mm,
               created_at: now
             };
-            workLogs.push(fullLog);
+            demo.createWorkLog(fullLog);
             newLogs.push(fullLog);
           }
         }
@@ -237,7 +240,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         message: response.message,
         follow_up_questions: response.follow_up_questions || [],
         needs_clarification: response.needs_clarification || false,
-        logs: workLogs.filter(l => l.session_id === sid),
+        logs: demo.getWorkLogsBySession(sid),
         new_logs: newLogs
       });
     }
