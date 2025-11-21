@@ -5,6 +5,10 @@ import LogView from './components/LogView';
 import HistoryView from './components/HistoryView';
 import QueryView from './components/QueryView';
 
+// Version for debugging deployments
+const APP_VERSION = '1.0.1-demo';
+const BUILD_TIME = new Date().toISOString();
+
 function App() {
   const [currentView, setCurrentView] = useState<View>('log');
   const [session, setSession] = useState<Session | null>(null);
@@ -195,6 +199,14 @@ function App() {
         {currentView === 'history' && <HistoryView />}
         {currentView === 'query' && <QueryView />}
       </main>
+
+      {/* Version indicator */}
+      <footer className="fixed bottom-0 right-0 m-4">
+        <div className="bg-gray-800 text-gray-300 text-xs px-3 py-2 rounded-lg shadow-lg">
+          <div className="font-mono">v{APP_VERSION}</div>
+          <div className="text-gray-500 text-[10px]">Demo Mode</div>
+        </div>
+      </footer>
     </div>
   );
 }
