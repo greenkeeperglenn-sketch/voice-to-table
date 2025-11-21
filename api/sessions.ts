@@ -3,8 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import * as demo from './lib/demo-storage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  console.log('Sessions handler called:', req.method);
+
   try {
     const isDemoMode = demo.isDemoMode();
+    console.log('isDemoMode:', isDemoMode);
 
     const { id, action } = req.query;
 
@@ -117,7 +120,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('Sessions API error:', error);
     return res.status(500).json({
       error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
     });
   }
 }
