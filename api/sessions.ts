@@ -3,6 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import * as demo from './lib/demo-storage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // DEBUG: Test if handler is reached at all
+  if (req.query.test === 'true') {
+    return res.status(200).json({ test: 'ok', version: '1.0.7-demo' });
+  }
+
   console.log('Sessions handler called:', req.method);
 
   try {
