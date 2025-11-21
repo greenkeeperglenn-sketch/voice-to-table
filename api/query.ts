@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDatabase, initDatabase, WorkLog } from './lib/database';
 import { processQuery } from './lib/ai-service';
 import * as demo from './lib/demo-storage';
+import type { WorkLog } from './lib/types';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -10,10 +10,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const isDemoMode = demo.isDemoMode();
-
-    if (!isDemoMode) {
-      await initDatabase();
-    }
 
     const { question, context } = req.body;
 
@@ -42,6 +38,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // Dynamic import to avoid loading @libsql/client in demo mode
+    const { getDatabase, initDatabase } = await import('./lib/database');
+    await initDatabase();
     const db = getDatabase();
 
     // Build and execute the query

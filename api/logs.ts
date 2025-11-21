@@ -1,14 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDatabase, initDatabase } from './lib/database';
 import * as demo from './lib/demo-storage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const isDemoMode = demo.isDemoMode();
-
-    if (!isDemoMode) {
-      await initDatabase();
-    }
 
     const { id, session_id, date: dateParam } = req.query;
 
@@ -23,6 +18,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (isDemoMode) {
           return res.status(200).json(demo.getWorkLogsBySession(session_id));
         }
+        // Dynamic import to avoid loading @libsql/client in demo mode
+        const { getDatabase, initDatabase } = await import('./lib/database');
+        await initDatabase();
         const db = getDatabase();
         const result = await db.execute({
           sql: 'SELECT * FROM work_logs WHERE session_id = ? ORDER BY created_at ASC',
@@ -35,6 +33,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (isDemoMode) {
           return res.status(200).json(demo.getWorkLogsByDate(dateParam));
         }
+        // Dynamic import to avoid loading @libsql/client in demo mode
+        const { getDatabase, initDatabase } = await import('./lib/database');
+        await initDatabase();
         const db = getDatabase();
         const result = await db.execute({
           sql: 'SELECT * FROM work_logs WHERE date = ? ORDER BY created_at ASC',
@@ -60,6 +61,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json(logs);
       }
 
+      // Dynamic import to avoid loading @libsql/client in demo mode
+      const { getDatabase, initDatabase } = await import('./lib/database');
+      await initDatabase();
       const db = getDatabase();
       let query = 'SELECT * FROM work_logs WHERE 1=1';
       const params: (string | number)[] = [];
@@ -120,6 +124,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json(updated);
       }
 
+      // Dynamic import to avoid loading @libsql/client in demo mode
+      const { getDatabase, initDatabase } = await import('./lib/database');
+      await initDatabase();
       const db = getDatabase();
       const setClause: string[] = [];
       const values: (string | number | null)[] = [];
@@ -152,6 +159,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ deleted });
       }
 
+      // Dynamic import to avoid loading @libsql/client in demo mode
+      const { getDatabase, initDatabase } = await import('./lib/database');
+      await initDatabase();
       const db = getDatabase();
       const result = await db.execute({
         sql: 'DELETE FROM work_logs WHERE id = ?',

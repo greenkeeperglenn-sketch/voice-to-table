@@ -8,7 +8,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   return res.status(200).json({
     status: 'ok',
-    version: '1.0.3-demo',
+    version: '1.0.4-demo',
     mode: isDemoMode ? 'demo' : 'database',
     timestamp: new Date().toISOString(),
     env: {

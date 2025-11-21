@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDatabase, initDatabase } from './lib/database';
 import { processConversation } from './lib/ai-service';
 import { v4 as uuidv4 } from 'uuid';
 import * as demo from './lib/demo-storage';
@@ -7,10 +6,6 @@ import * as demo from './lib/demo-storage';
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const isDemoMode = demo.isDemoMode();
-
-    if (!isDemoMode) {
-      await initDatabase();
-    }
 
     const { session_id } = req.query;
 
@@ -21,6 +16,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json(messages);
       }
 
+      // Dynamic import to avoid loading @libsql/client in demo mode
+      const { getDatabase, initDatabase } = await import('./lib/database');
+      await initDatabase();
       const db = getDatabase();
       const result = await db.execute({
         sql: 'SELECT * FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC',
@@ -95,7 +93,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      // Database mode
+      // Database mode - dynamic import to avoid loading @libsql/client in demo mode
+      const { getDatabase, initDatabase } = await import('./lib/database');
+      await initDatabase();
       const db = getDatabase();
 
       // Store user message

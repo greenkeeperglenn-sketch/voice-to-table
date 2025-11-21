@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDatabase, initDatabase } from './lib/database';
 import * as demo from './lib/demo-storage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -9,10 +8,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const isDemoMode = demo.isDemoMode();
-
-    if (!isDemoMode) {
-      await initDatabase();
-    }
 
     // GET /api/stats?field=xxx - get distinct values for a field
     const { field } = req.query;
@@ -26,6 +21,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json(demo.getDistinctValues(field));
       }
 
+      // Dynamic import to avoid loading @libsql/client in demo mode
+      const { getDatabase, initDatabase } = await import('./lib/database');
+      await initDatabase();
       const db = getDatabase();
       const result = await db.execute(`
         SELECT DISTINCT ${field} as value
@@ -48,6 +46,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json(stats);
     }
 
+    // Dynamic import to avoid loading @libsql/client in demo mode
+    const { getDatabase, initDatabase } = await import('./lib/database');
+    await initDatabase();
     const db = getDatabase();
     let dateFilter = '';
     const params: string[] = [];

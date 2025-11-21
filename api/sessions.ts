@@ -1,15 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDatabase, initDatabase } from './lib/database';
 import { v4 as uuidv4 } from 'uuid';
 import * as demo from './lib/demo-storage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const isDemoMode = demo.isDemoMode();
-
-    if (!isDemoMode) {
-      await initDatabase();
-    }
 
     const { id, action } = req.query;
 
@@ -24,6 +19,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(200).json(session);
         }
 
+        // Dynamic import to avoid loading @libsql/client in demo mode
+        const { getDatabase, initDatabase } = await import('./lib/database');
+        await initDatabase();
         const db = getDatabase();
         const result = await db.execute({
           sql: 'SELECT * FROM sessions WHERE id = ?',
@@ -47,6 +45,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json(sessions);
       }
 
+      const { getDatabase, initDatabase } = await import('./lib/database');
+      await initDatabase();
       const db = getDatabase();
       let query = 'SELECT * FROM sessions';
       const params: (string | number)[] = [];
@@ -74,6 +74,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json(session);
       }
 
+      const { getDatabase, initDatabase } = await import('./lib/database');
+      await initDatabase();
       const db = getDatabase();
       await db.execute({
         sql: 'INSERT INTO sessions (id, date, started_at) VALUES (?, ?, ?)',
@@ -92,6 +94,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(200).json({ success: true });
         }
 
+        const { getDatabase, initDatabase } = await import('./lib/database');
+        await initDatabase();
         const db = getDatabase();
         const countResult = await db.execute({
           sql: 'SELECT COUNT(*) as count FROM work_logs WHERE session_id = ?',
