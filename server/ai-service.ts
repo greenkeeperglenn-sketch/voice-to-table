@@ -2,8 +2,16 @@ import OpenAI from 'openai';
 import { WorkLog } from './database';
 import { v4 as uuidv4 } from 'uuid';
 
-// Initialize OpenAI client - will use OPENAI_API_KEY env variable
-const openai = new OpenAI();
+// Initialize OpenAI client only if API key is available
+let openai: OpenAI | null = null;
+const apiKey = process.env.OPENAI_API_KEY;
+
+if (apiKey && apiKey.trim() !== '' && apiKey !== 'your_openai_api_key_here') {
+  openai = new OpenAI({ apiKey });
+  console.log('OpenAI client initialized');
+} else {
+  console.log('No OpenAI API key found - running in fallback mode');
+}
 
 const SYSTEM_PROMPT = `You are a helpful assistant for grounds maintenance staff. Your job is to:
 1. Have natural conversations about their daily work
@@ -109,6 +117,12 @@ export async function processConversation(
   sessionId: string,
   currentDate: string
 ): Promise<ConversationResponse> {
+  // Use fallback mode if OpenAI is not available
+  if (!openai) {
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+    return processConversationFallback(lastUserMessage?.content || '', sessionId, currentDate);
+  }
+
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -155,6 +169,17 @@ export async function processQuery(
   question: string,
   conversationContext?: string
 ): Promise<QueryResponse> {
+  // Return basic response if OpenAI is not available
+  if (!openai) {
+    return {
+      message: "Query feature requires OpenAI API key. Please add your OPENAI_API_KEY to the .env file.",
+      sql_where: null,
+      order_by: 'date DESC',
+      limit: 50,
+      summary_request: 'list'
+    };
+  }
+
   try {
     const messages: { role: 'user' | 'assistant' | 'system'; content: string }[] = [
       { role: 'system', content: QUERY_SYSTEM_PROMPT }
