@@ -1,19 +1,31 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
-import db, { WorkLog, Session, ChatMessage } from './database';
+import db, { WorkLog, Session, ChatMessage } from './database.js';
 import {
   processConversation,
   processQuery,
   processConversationFallback,
   ConversationResponse
-} from './ai-service';
+} from './ai-service.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(cors());
 app.use(express.json());
+
+// Serve static files in production
+if (isProduction) {
+  const staticPath = path.join(__dirname, '..', 'client');
+  app.use(express.static(staticPath));
+}
 
 // Check if OpenAI API key is available
 const hasOpenAI = !!process.env.OPENAI_API_KEY;
@@ -475,8 +487,16 @@ app.get('/api/values/:field', (req, res) => {
   res.json(values.map((v: { value: string }) => v.value));
 });
 
+// Serve index.html for all non-API routes in production (SPA fallback)
+if (isProduction) {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'client', 'index.html'));
+  });
+}
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Mode: ${isProduction ? 'production' : 'development'}`);
   console.log(`OpenAI API: ${hasOpenAI ? 'enabled' : 'disabled (using fallback mode)'}`);
 });
