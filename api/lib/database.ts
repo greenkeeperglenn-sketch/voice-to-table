@@ -16,6 +16,11 @@ export function getDatabase(): Client {
     db = createClient({
       url: process.env.DATABASE_URL,
     });
+  } else if (process.env.VERCEL) {
+    // Running on Vercel without database configured
+    throw new Error(
+      'Database not configured. Please set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN environment variables in Vercel.'
+    );
   } else {
     // Local file for development
     db = createClient({
