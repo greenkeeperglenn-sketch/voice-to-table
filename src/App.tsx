@@ -6,8 +6,7 @@ import HistoryView from './components/HistoryView';
 import QueryView from './components/QueryView';
 
 // Version for debugging deployments
-const APP_VERSION = '1.0.1-demo';
-const BUILD_TIME = new Date().toISOString();
+const APP_VERSION = '1.0.2-demo';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('log');
@@ -35,6 +34,7 @@ function App() {
   async function startNewSession() {
     try {
       setIsLoading(true);
+      setError(null);
       const newSession = await createSession();
       setSession(newSession);
       setMessages([]);
@@ -42,10 +42,21 @@ function App() {
       localStorage.setItem('currentSessionId', newSession.id);
       localStorage.setItem('currentSessionDate', newSession.date);
     } catch (err) {
-      setError('Failed to start session. Is the server running?');
-      console.error(err);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to start session: ${errorMsg}`);
+      console.error('Session error:', err);
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function checkApiHealth() {
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      alert(`API Status: ${JSON.stringify(data, null, 2)}`);
+    } catch (err) {
+      alert(`API Error: ${err instanceof Error ? err.message : 'Failed to reach API'}`);
     }
   }
 
@@ -174,12 +185,26 @@ function App() {
         <div className="bg-red-50 border-b border-red-200 px-4 py-3">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <p className="text-red-700">{error}</p>
-            <button
-              onClick={() => setError(null)}
-              className="text-red-500 hover:text-red-700"
-            >
-              ✕
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={checkApiHealth}
+                className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Check API
+              </button>
+              <button
+                onClick={() => { localStorage.clear(); startNewSession(); }}
+                className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-500 hover:text-red-700 px-2"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         </div>
       )}
