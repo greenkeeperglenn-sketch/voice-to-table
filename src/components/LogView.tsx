@@ -22,13 +22,58 @@ export default function LogView({
 }: LogViewProps) {
   const [input, setInput] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const lastMessageCountRef = useRef(0);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Speak new assistant messages
+  useEffect(() => {
+    if (autoSpeak && messages.length > lastMessageCountRef.current) {
+      const newMessages = messages.slice(lastMessageCountRef.current);
+      const lastAssistantMessage = newMessages.filter(m => m.role === 'assistant').pop();
+      if (lastAssistantMessage) {
+        speakText(lastAssistantMessage.content);
+      }
+    }
+    lastMessageCountRef.current = messages.length;
+  }, [messages, autoSpeak]);
+
+  function speakText(text: string) {
+    if ('speechSynthesis' in window) {
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.lang = 'en-GB';
+
+      // Try to get a nice voice
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice = voices.find(v => v.lang.includes('en-GB')) || voices[0];
+      if (preferredVoice) utterance.voice = preferredVoice;
+
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => setIsSpeaking(false);
+
+      window.speechSynthesis.speak(utterance);
+    }
+  }
+
+  function stopSpeaking() {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+  }
 
   // Initialize speech recognition
   useEffect(() => {
@@ -177,7 +222,7 @@ export default function LogView({
 
         {/* Input */}
         <form onSubmit={handleSubmit} className="p-4 border-t border-gray-200">
-          <div className="flex gap-2">
+          <div className="flex gap-2 mb-2">
             <button
               type="button"
               onClick={toggleListening}
@@ -205,6 +250,27 @@ export default function LogView({
             >
               Send
             </button>
+          </div>
+          {/* Speech controls */}
+          <div className="flex items-center gap-3 text-sm">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoSpeak}
+                onChange={(e) => setAutoSpeak(e.target.checked)}
+                className="rounded border-gray-300 text-grass-600 focus:ring-grass-500"
+              />
+              <span className="text-gray-600">🔊 Auto-speak responses</span>
+            </label>
+            {isSpeaking && (
+              <button
+                type="button"
+                onClick={stopSpeaking}
+                className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+              >
+                ⏹ Stop speaking
+              </button>
+            )}
           </div>
         </form>
       </div>
