@@ -1,7 +1,7 @@
 // In-memory storage for demo mode (no database required)
 // Note: Data will reset on cold starts, but works great for demos
 
-import { WorkLog, Session, ChatMessage } from './database';
+import { WorkLog, Session, ChatMessage } from './types';
 
 interface DemoStorage {
   sessions: Map<string, Session>;
