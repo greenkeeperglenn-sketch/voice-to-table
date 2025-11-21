@@ -27,6 +27,8 @@ export default function LogView({
 }: LogViewProps) {
   const [input, setInput] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [useVoiceMode, setUseVoiceMode] = useState(false);
+  const [voiceTranscripts, setVoiceTranscripts] = useState<{text: string, isUser: boolean}[]>([]);
 
   // History panel state
   const [historyMode, setHistoryMode] = useState<'log' | 'query'>('log');
@@ -51,6 +53,30 @@ export default function LogView({
   // Handle transcripts from query mode
   function handleQueryTranscript(text: string, isUser: boolean) {
     setQueryTranscripts(prev => [...prev, { text, isUser }]);
+  }
+
+  // Handle transcripts from log mode voice
+  function handleVoiceTranscript(text: string, isUser: boolean) {
+    setVoiceTranscripts(prev => [...prev, { text, isUser }]);
+    // Extract insights from voice conversation
+    if (isUser) {
+      extractInsights(text);
+    }
+  }
+
+  // Commit voice conversation to task board
+  function handleCommitToTaskBoard() {
+    if (voiceTranscripts.length === 0) return;
+    // Send the conversation as a message to process into logs
+    const conversationText = voiceTranscripts
+      .filter(t => t.isUser)
+      .map(t => t.text)
+      .join('. ');
+    if (conversationText.trim()) {
+      onSendMessage(conversationText);
+    }
+    setVoiceTranscripts([]);
+    setUseVoiceMode(false);
   }
 
   // Extract positives and red flags from messages
@@ -214,60 +240,146 @@ export default function LogView({
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Chat Panel */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-200px)] min-h-[500px]">
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold text-gray-800">Log Work</h2>
-              <p className="text-sm text-gray-500">Tell me about your work today</p>
-            </div>
+    <div className="space-y-4">
+      {/* Reporting Section - Always visible at top */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Positives Box */}
+        <div className="bg-green-50 border-2 border-green-300 rounded-xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-green-800 text-lg flex items-center gap-2">
+              ✅ Positives
+            </h3>
+            {positives.length > 0 && (
+              <button onClick={() => setPositives([])} className="text-sm text-green-600 hover:text-green-800 font-medium">Clear</button>
+            )}
           </div>
+          {positives.length === 0 ? (
+            <p className="text-green-600 text-sm">No positives reported yet - they'll appear here from conversations</p>
+          ) : (
+            <ul className="space-y-2">
+              {positives.map((p, i) => (
+                <li key={i} className="text-green-700 flex items-start gap-2">
+                  <span className="text-green-500 mt-0.5">•</span> {p}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.length === 0 && (
-            <div className="text-center text-gray-400 mt-8">
-              <div className="text-4xl mb-2">💬</div>
-              <p>Tell me what you worked on today</p>
-              <p className="text-sm mt-2">Try: "Cut greens at 3.5mm with Toro 3250"</p>
-            </div>
-          )}
-          {messages.map((msg, idx) => (
-            <div key={idx} className={`fade-in ${msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}`}>
-              <div className={msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-assistant'}>{msg.content}</div>
-            </div>
-          ))}
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="chat-bubble-assistant"><span className="animate-pulse">...</span></div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input */}
-        <form onSubmit={handleSubmit} className="p-4 border-t border-gray-200">
-          <div className="flex gap-2">
-            <button type="button" onClick={toggleListening}
-              className={`p-3 rounded-lg ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 hover:bg-gray-200'}`}>
-              🎤
-            </button>
-            <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
-              placeholder={isListening ? 'Listening...' : 'Describe your work...'}
-              className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-grass-500" disabled={isLoading} />
-            <button type="submit" disabled={!input.trim() || isLoading}
-              className="px-6 py-2 bg-grass-600 text-white rounded-lg font-medium hover:bg-grass-700 disabled:opacity-50">
-              Send
-            </button>
+        {/* Red Flags Box */}
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-red-800 text-lg flex items-center gap-2">
+              🚩 Red Flags
+            </h3>
+            {redFlags.length > 0 && (
+              <button onClick={() => setRedFlags([])} className="text-sm text-red-600 hover:text-red-800 font-medium">Clear</button>
+            )}
           </div>
-        </form>
+          {redFlags.length === 0 ? (
+            <p className="text-red-600 text-sm">No concerns flagged yet - issues will be highlighted here</p>
+          ) : (
+            <ul className="space-y-2">
+              {redFlags.map((r, i) => (
+                <li key={i} className="text-red-700 flex items-start gap-2">
+                  <span className="text-red-500 mt-0.5">⚠</span> {r}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
-      {/* History Panel */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-200px)] min-h-[500px]">
+      {/* Main Panels */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Chat Panel */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-320px)] min-h-[400px]">
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-gray-800">Log Work</h2>
+                <p className="text-sm text-gray-500">Tell me about your work today</p>
+              </div>
+              <button
+                onClick={() => setUseVoiceMode(!useVoiceMode)}
+                className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+                  useVoiceMode ? 'bg-grass-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {useVoiceMode ? '📝 Text Mode' : '🎙️ Voice Mode'}
+              </button>
+            </div>
+          </div>
+
+          {useVoiceMode ? (
+            /* Voice conversation mode */
+            <div className="flex-1 overflow-y-auto p-4">
+              <VoiceChat
+                onTranscript={handleVoiceTranscript}
+                onCommitToTaskBoard={handleCommitToTaskBoard}
+                staff={staff}
+                mode="log"
+              />
+              {voiceTranscripts.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <h4 className="text-sm font-medium text-gray-600">Conversation:</h4>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {voiceTranscripts.map((t, i) => (
+                      <div key={i} className={`text-sm p-2 rounded ${t.isUser ? 'bg-blue-50' : 'bg-gray-50'}`}>
+                        <span className="font-medium">{t.isUser ? 'You: ' : 'AI: '}</span>{t.text}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Text input mode */
+            <>
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {messages.length === 0 && (
+                  <div className="text-center text-gray-400 mt-8">
+                    <div className="text-4xl mb-2">💬</div>
+                    <p>Tell me what you worked on today</p>
+                    <p className="text-sm mt-2">Try: "Cut greens at 3.5mm with Toro 3250"</p>
+                  </div>
+                )}
+                {messages.map((msg, idx) => (
+                  <div key={idx} className={`fade-in ${msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}`}>
+                    <div className={msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-assistant'}>{msg.content}</div>
+                  </div>
+                ))}
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div className="chat-bubble-assistant"><span className="animate-pulse">...</span></div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input */}
+              <form onSubmit={handleSubmit} className="p-4 border-t border-gray-200">
+                <div className="flex gap-2">
+                  <button type="button" onClick={toggleListening}
+                    className={`p-3 rounded-lg ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 hover:bg-gray-200'}`}>
+                    🎤
+                  </button>
+                  <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
+                    placeholder={isListening ? 'Listening...' : 'Describe your work...'}
+                    className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-grass-500" disabled={isLoading} />
+                  <button type="submit" disabled={!input.trim() || isLoading}
+                    className="px-6 py-2 bg-grass-600 text-white rounded-lg font-medium hover:bg-grass-700 disabled:opacity-50">
+                    Send
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
+        </div>
+
+        {/* History Panel */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-320px)] min-h-[400px]">
         {/* Mode Tabs */}
         <div className="p-2 border-b border-gray-200 flex gap-2">
           <button onClick={() => setHistoryMode('log')}
@@ -304,53 +416,6 @@ export default function LogView({
                 <h3 className="font-semibold text-gray-800">{formatDate(displayDate)}</h3>
                 <p className="text-sm text-gray-500">{logsForDate.length} entries</p>
               </div>
-
-              {/* Positives and Red Flags boxes */}
-              {(positives.length > 0 || redFlags.length > 0) && (
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  {/* Positives Box */}
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-semibold text-green-800 text-sm flex items-center gap-1">
-                        ✅ Positives
-                      </h4>
-                      <button onClick={() => setPositives([])} className="text-xs text-green-600 hover:text-green-800">Clear</button>
-                    </div>
-                    {positives.length === 0 ? (
-                      <p className="text-green-600 text-xs">No positives yet</p>
-                    ) : (
-                      <ul className="space-y-1">
-                        {positives.map((p, i) => (
-                          <li key={i} className="text-green-700 text-xs flex items-start gap-1">
-                            <span className="text-green-500">•</span> {p}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-
-                  {/* Red Flags Box */}
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-semibold text-red-800 text-sm flex items-center gap-1">
-                        🚩 Red Flags
-                      </h4>
-                      <button onClick={() => setRedFlags([])} className="text-xs text-red-600 hover:text-red-800">Clear</button>
-                    </div>
-                    {redFlags.length === 0 ? (
-                      <p className="text-red-600 text-xs">No concerns flagged</p>
-                    ) : (
-                      <ul className="space-y-1">
-                        {redFlags.map((r, i) => (
-                          <li key={i} className="text-red-700 text-xs flex items-start gap-1">
-                            <span className="text-red-500">⚠</span> {r}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {logsForDate.length === 0 ? (
                 <div className="text-center text-gray-400 mt-8">
@@ -389,6 +454,7 @@ export default function LogView({
             )}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

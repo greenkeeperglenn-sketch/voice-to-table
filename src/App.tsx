@@ -4,7 +4,7 @@ import { createSession, sendMessage, getSessionLogs, getChatHistory } from './ap
 import LogView from './components/LogView';
 
 // Version for debugging deployments
-const APP_VERSION = '3.3.0-demo';
+const APP_VERSION = '3.4.0-demo';
 
 const STAFF_OPTIONS = ['Jim', 'Fred', 'Bob', 'Debbie', 'Dicky'];
 
