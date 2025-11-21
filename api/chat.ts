@@ -1,7 +1,33 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import OpenAI from 'openai';
-import * as demo from './lib/demo-storage';
-import { WorkLog } from './lib/types';
+
+// Dynamic import for Vercel compatibility
+let demo: typeof import('./lib/demo-storage') | null = null;
+
+async function getStorage() {
+  if (!demo) {
+    try {
+      demo = await import('./lib/demo-storage');
+    } catch (e) {
+      console.error('Failed to load demo-storage:', e);
+    }
+  }
+  return demo;
+}
+
+interface WorkLog {
+  id: string;
+  session_id: string;
+  date: string;
+  staff?: string;
+  area?: string;
+  task_type?: string;
+  task_description?: string;
+  machine?: string;
+  duration_minutes?: number;
+  height_mm?: number;
+  created_at?: string;
+}
 
 function generateId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -164,10 +190,11 @@ function processFallback(message: string, currentDate: string, staff: string, se
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
+    const storage = await getStorage();
     const { session_id } = req.query;
 
     if (req.method === 'GET' && session_id && typeof session_id === 'string') {
-      return res.status(200).json(demo.getChatHistory(session_id));
+      return res.status(200).json(storage?.getChatHistory(session_id) || []);
     }
 
     if (req.method === 'POST') {
@@ -180,13 +207,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const now = new Date().toISOString();
 
       // Get existing logs for this session (from shared storage)
-      const sessionLogs = demo.getWorkLogsBySession(sid);
+      const sessionLogs = storage?.getWorkLogsBySession(sid) || [];
 
       // Store user message in shared storage
-      demo.addChatMessage({ session_id: sid, role: 'user', content: message });
+      storage?.addChatMessage({ session_id: sid, role: 'user', content: message });
 
       // Get chat history for this session
-      const history = demo.getChatHistory(sid);
+      const history = storage?.getChatHistory(sid) || [{ role: 'user', content: message }];
 
       // Process with OpenAI or fallback
       let response;
@@ -202,7 +229,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Store assistant response in shared storage
-      demo.addChatMessage({ session_id: sid, role: 'assistant', content: response.message });
+      storage?.addChatMessage({ session_id: sid, role: 'assistant', content: response.message });
 
       // Handle extracted work logs
       const newLogs: WorkLog[] = [];
@@ -211,7 +238,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // Check if we should update existing or create new
           if (log.update_existing && sessionLogs.length > 0) {
             const lastLog = sessionLogs[sessionLogs.length - 1];
-            demo.updateWorkLog(lastLog.id, {
+            storage?.updateWorkLog(lastLog.id, {
               ...log,
               task_description: lastLog.task_description ? `${lastLog.task_description}. ${log.task_description || ''}` : log.task_description,
               staff
@@ -230,7 +257,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               height_mm: log.height_mm,
               created_at: now
             };
-            demo.createWorkLog(fullLog);
+            storage?.createWorkLog(fullLog);
             newLogs.push(fullLog);
           }
         }
@@ -240,7 +267,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         message: response.message,
         follow_up_questions: response.follow_up_questions || [],
         needs_clarification: response.needs_clarification || false,
-        logs: demo.getWorkLogsBySession(sid),
+        logs: storage?.getWorkLogsBySession(sid) || newLogs,
         new_logs: newLogs
       });
     }
