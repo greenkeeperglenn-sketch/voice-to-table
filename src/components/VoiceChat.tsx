@@ -2,11 +2,11 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 interface VoiceChatProps {
   onTranscript: (text: string, isUser: boolean) => void;
-  onWorkLogExtracted?: (log: any) => void;
+  onConversationEnd?: () => void;
   staff: string;
 }
 
-export default function VoiceChat({ onTranscript, onWorkLogExtracted, staff }: VoiceChatProps) {
+export default function VoiceChat({ onTranscript, onConversationEnd, staff }: VoiceChatProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -124,6 +124,8 @@ Keep responses short and conversational. When you have enough info about a task,
   }
 
   function disconnect() {
+    const wasConnected = isConnected;
+
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
       mediaStreamRef.current = null;
@@ -141,6 +143,11 @@ Keep responses short and conversational. When you have enough info about a task,
     setIsListening(false);
     setIsSpeaking(false);
     setStatus('Click to start voice conversation');
+
+    // Notify parent that conversation ended so it can process logs
+    if (wasConnected && onConversationEnd) {
+      onConversationEnd();
+    }
   }
 
   function handleRealtimeEvent(event: any) {

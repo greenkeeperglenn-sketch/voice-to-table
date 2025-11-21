@@ -29,6 +29,7 @@ export default function LogView({
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [useRealtimeVoice, setUseRealtimeVoice] = useState(false);
   const [voiceTranscripts, setVoiceTranscripts] = useState<{text: string, isUser: boolean}[]>([]);
+  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const lastMessageCountRef = useRef(0);
@@ -36,10 +37,27 @@ export default function LogView({
   // Handle transcripts from realtime voice chat
   function handleVoiceTranscript(text: string, isUser: boolean) {
     setVoiceTranscripts(prev => [...prev, { text, isUser }]);
-    // Also send to the main chat handler if it's a user message
-    if (isUser && text.trim()) {
-      onSendMessage(text);
+  }
+
+  // When voice conversation ends, process all transcripts to extract logs
+  async function handleVoiceConversationEnd() {
+    if (voiceTranscripts.length === 0) return;
+
+    setIsProcessingVoice(true);
+
+    // Combine all user messages into a summary for log extraction
+    const userMessages = voiceTranscripts
+      .filter(t => t.isUser)
+      .map(t => t.text)
+      .join('. ');
+
+    if (userMessages.trim()) {
+      // Send combined message to extract all work logs
+      const summaryMessage = `Voice conversation summary - please extract all work logs from this: ${userMessages}`;
+      await onSendMessage(summaryMessage);
     }
+
+    setIsProcessingVoice(false);
   }
 
   // Auto-scroll to bottom when new messages arrive
@@ -210,12 +228,29 @@ export default function LogView({
           <div className="flex-1 overflow-y-auto p-4">
             <VoiceChat
               onTranscript={handleVoiceTranscript}
+              onConversationEnd={handleVoiceConversationEnd}
               staff={staff}
             />
+
+            {/* Processing indicator */}
+            {isProcessingVoice && (
+              <div className="mt-4 p-3 bg-blue-50 text-blue-700 rounded-lg text-center">
+                Processing voice conversation and extracting work logs...
+              </div>
+            )}
+
             {/* Show voice transcripts */}
             {voiceTranscripts.length > 0 && (
               <div className="mt-4 space-y-2">
-                <h4 className="text-sm font-medium text-gray-600">Conversation transcript:</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-gray-600">Conversation transcript:</h4>
+                  <button
+                    onClick={() => setVoiceTranscripts([])}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    Clear
+                  </button>
+                </div>
                 {voiceTranscripts.map((t, i) => (
                   <div key={i} className={`text-sm p-2 rounded ${t.isUser ? 'bg-grass-50 text-grass-800' : 'bg-gray-50 text-gray-700'}`}>
                     <span className="font-medium">{t.isUser ? 'You: ' : 'AI: '}</span>
