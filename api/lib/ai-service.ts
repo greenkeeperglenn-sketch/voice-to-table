@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { WorkLog } from './database';
+import { WorkLog } from './types';
 import { v4 as uuidv4 } from 'uuid';
 
 const SYSTEM_PROMPT = `You are a helpful assistant for grounds maintenance staff. Your job is to:
