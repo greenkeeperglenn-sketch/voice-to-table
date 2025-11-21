@@ -6,7 +6,7 @@ import HistoryView from './components/HistoryView';
 import QueryView from './components/QueryView';
 
 // Version for debugging deployments
-const APP_VERSION = '1.0.7-demo';
+const APP_VERSION = '2.0.0-demo';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('log');

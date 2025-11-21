@@ -16,11 +16,6 @@ const storage: DemoStorage = {
   chatMessages: [],
 };
 
-// Check if we're in demo mode (no database configured)
-export function isDemoMode(): boolean {
-  return !process.env.TURSO_DATABASE_URL && !process.env.DATABASE_URL;
-}
-
 // Session operations
 export function createSession(id: string, date: string): Session {
   const session: Session = {
