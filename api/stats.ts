@@ -9,6 +9,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   await initDatabase();
   const db = getDatabase();
 
+  // GET /api/stats?field=xxx - get distinct values for a field
+  const { field } = req.query;
+  if (field && typeof field === 'string') {
+    const allowedFields = ['area', 'machine', 'staff', 'task_type', 'issue_type'];
+    if (!allowedFields.includes(field)) {
+      return res.status(400).json({ error: 'Invalid field' });
+    }
+
+    const result = await db.execute(`
+      SELECT DISTINCT ${field} as value
+      FROM work_logs
+      WHERE ${field} IS NOT NULL
+      ORDER BY ${field}
+    `);
+
+    return res.status(200).json(result.rows.map(v => (v as Record<string, unknown>).value));
+  }
+
+  // GET /api/stats - get statistics
   const { date_from, date_to } = req.query;
 
   let dateFilter = '';
@@ -33,12 +52,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     db.execute({ sql: `SELECT SUM(duration_minutes) as total FROM work_logs WHERE duration_minutes IS NOT NULL ${dateFilter}`, args: params }),
   ]);
 
-  const total = (totalMinutes.rows[0] as { total: number | null })?.total || 0;
+  const total = (totalMinutes.rows[0] as Record<string, unknown>)?.total as number | null || 0;
 
   return res.status(200).json({
-    total_tasks: (totalTasks.rows[0] as { count: number })?.count || 0,
-    total_sessions: (totalSessions.rows[0] as { count: number })?.count || 0,
-    total_hours: total ? Math.round(total / 60 * 10) / 10 : 0,
+    total_tasks: (totalTasks.rows[0] as Record<string, unknown>)?.count || 0,
+    total_sessions: (totalSessions.rows[0] as Record<string, unknown>)?.count || 0,
+    total_hours: total ? Math.round(Number(total) / 60 * 10) / 10 : 0,
     tasks_by_type: tasksByType.rows,
     tasks_by_area: tasksByArea.rows,
     machine_usage: machineUsage.rows,

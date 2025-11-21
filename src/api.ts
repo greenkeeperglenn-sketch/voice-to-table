@@ -24,7 +24,7 @@ export async function createSession(): Promise<Session> {
 }
 
 export async function getSession(id: string): Promise<Session> {
-  return fetchJSON(`/sessions/${id}`);
+  return fetchJSON(`/sessions?id=${encodeURIComponent(id)}`);
 }
 
 export async function getSessions(params?: { date?: string; limit?: number; offset?: number }): Promise<Session[]> {
@@ -38,7 +38,7 @@ export async function getSessions(params?: { date?: string; limit?: number; offs
 }
 
 export async function endSession(id: string, summary?: string): Promise<void> {
-  return fetchJSON(`/sessions/${id}/end`, {
+  return fetchJSON(`/sessions?id=${encodeURIComponent(id)}&action=end`, {
     method: 'PATCH',
     body: JSON.stringify({ summary }),
   });
@@ -53,16 +53,16 @@ export async function sendMessage(sessionId: string, message: string): Promise<C
 }
 
 export async function getChatHistory(sessionId: string): Promise<ChatMessage[]> {
-  return fetchJSON(`/chat/${sessionId}`);
+  return fetchJSON(`/chat?session_id=${encodeURIComponent(sessionId)}`);
 }
 
 // Work Log APIs
 export async function getSessionLogs(sessionId: string): Promise<WorkLog[]> {
-  return fetchJSON(`/logs/session/${sessionId}`);
+  return fetchJSON(`/logs?session_id=${encodeURIComponent(sessionId)}`);
 }
 
 export async function getLogsByDate(date: string): Promise<WorkLog[]> {
-  return fetchJSON(`/logs/date/${date}`);
+  return fetchJSON(`/logs?date=${encodeURIComponent(date)}`);
 }
 
 export interface LogFilters {
@@ -91,14 +91,14 @@ export async function getLogs(filters?: LogFilters): Promise<WorkLog[]> {
 }
 
 export async function updateLog(id: string, updates: Partial<WorkLog>): Promise<WorkLog> {
-  return fetchJSON(`/logs/${id}`, {
+  return fetchJSON(`/logs?id=${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: JSON.stringify(updates),
   });
 }
 
 export async function deleteLog(id: string): Promise<{ deleted: boolean }> {
-  return fetchJSON(`/logs/${id}`, { method: 'DELETE' });
+  return fetchJSON(`/logs?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 // Query APIs
@@ -121,5 +121,5 @@ export async function getStats(params?: { date_from?: string; date_to?: string }
 
 // Get distinct values for filters
 export async function getDistinctValues(field: 'area' | 'machine' | 'staff' | 'task_type' | 'issue_type'): Promise<string[]> {
-  return fetchJSON(`/values/${field}`);
+  return fetchJSON(`/stats?field=${encodeURIComponent(field)}`);
 }
