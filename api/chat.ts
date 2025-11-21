@@ -1,19 +1,70 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { processConversation } from './lib/ai-service';
-import { v4 as uuidv4 } from 'uuid';
-import * as demo from './lib/demo-storage';
+
+// Inline storage
+const chatMessages: { session_id: string; role: string; content: string; created_at: string }[] = [];
+const workLogs: { id: string; session_id: string; date: string; task_description: string; created_at: string }[] = [];
+
+function generateId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Simple pattern matching for work log extraction
+function extractWorkInfo(message: string) {
+  const lowerMsg = message.toLowerCase();
+
+  // Detect task types
+  const taskPatterns = [
+    { pattern: /mow|cut|cutting/i, task: 'mowing' },
+    { pattern: /trim|trimming/i, task: 'trimming' },
+    { pattern: /water|watering/i, task: 'watering' },
+    { pattern: /plant|planting/i, task: 'planting' },
+    { pattern: /weed|weeding/i, task: 'weeding' },
+    { pattern: /repair|fix/i, task: 'repair' },
+  ];
+
+  let taskType = null;
+  for (const { pattern, task } of taskPatterns) {
+    if (pattern.test(lowerMsg)) {
+      taskType = task;
+      break;
+    }
+  }
+
+  // Detect areas
+  const areaPatterns = [
+    { pattern: /green[s]?/i, area: 'greens' },
+    { pattern: /fairway[s]?/i, area: 'fairways' },
+    { pattern: /rough/i, area: 'rough' },
+    { pattern: /lawn/i, area: 'lawn' },
+    { pattern: /garden/i, area: 'garden' },
+  ];
+
+  let area = null;
+  for (const { pattern, area: areaName } of areaPatterns) {
+    if (pattern.test(lowerMsg)) {
+      area = areaName;
+      break;
+    }
+  }
+
+  return { taskType, area };
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { session_id } = req.query;
 
-    // GET /api/chat?session_id=xxx - get chat history
+    // GET - return chat history
     if (req.method === 'GET' && session_id && typeof session_id === 'string') {
-      const messages = demo.getChatHistory(session_id);
+      const messages = chatMessages.filter(m => m.session_id === session_id);
       return res.status(200).json(messages);
     }
 
-    // POST /api/chat - send message
+    // POST - process message
     if (req.method === 'POST') {
       const { session_id: sid, message } = req.body;
 
@@ -22,59 +73,59 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const currentDate = new Date().toISOString().split('T')[0];
+      const now = new Date().toISOString();
 
       // Store user message
-      demo.addChatMessage({ session_id: sid, role: 'user', content: message });
+      chatMessages.push({ session_id: sid, role: 'user', content: message, created_at: now });
 
-      // Get conversation history
-      const history = demo.getChatHistory(sid);
-      const messages = history.map(m => ({
-        role: m.role as 'user' | 'assistant' | 'system',
-        content: m.content
-      }));
+      // Extract work info from message
+      const { taskType, area } = extractWorkInfo(message);
 
-      // Process with AI
-      const response = await processConversation(messages, sid, currentDate);
-
-      // Store assistant response
-      demo.addChatMessage({ session_id: sid, role: 'assistant', content: response.message });
-
-      // Store extracted work logs
-      if (response.extracted_logs && response.extracted_logs.length > 0) {
-        for (const log of response.extracted_logs) {
-          demo.createWorkLog({
-            id: log.id || uuidv4(),
-            date: log.date || currentDate,
-            session_id: sid,
-            time_start: log.time_start,
-            time_end: log.time_end,
-            duration_minutes: log.duration_minutes,
-            area: log.area,
-            task_type: log.task_type,
-            task_description: log.task_description,
-            machine: log.machine,
-            machine_setting: log.machine_setting,
-            height_mm: log.height_mm,
-            staff: log.staff,
-            materials_used: log.materials_used,
-            issue_type: log.issue_type,
-            issue_description: log.issue_description,
-            notes: log.notes,
-            weather: log.weather,
-            created_at: new Date().toISOString(),
-          });
-        }
+      // Create work log if we detected something
+      const newLogs = [];
+      if (taskType || area) {
+        const log = {
+          id: generateId(),
+          session_id: sid,
+          date: currentDate,
+          task_type: taskType,
+          area: area,
+          task_description: message,
+          created_at: now
+        };
+        workLogs.push(log as any);
+        newLogs.push(log);
       }
 
-      // Get updated logs
-      const logs = demo.getWorkLogsBySession(sid);
+      // Generate response
+      let responseMessage = "Got it! I've recorded your work.";
+      const followUp = [];
+
+      if (taskType && area) {
+        responseMessage = `Logged: ${taskType} on ${area}. Anything else to add?`;
+      } else if (taskType) {
+        responseMessage = `Logged: ${taskType}. Which area was this?`;
+        followUp.push("Which area did you work on?");
+      } else if (area) {
+        responseMessage = `Working on ${area}. What did you do there?`;
+        followUp.push("What work did you do?");
+      } else {
+        responseMessage = "I'd like to help log your work. Could you tell me what you did and where?";
+        followUp.push("What work did you do today?");
+      }
+
+      // Store assistant response
+      chatMessages.push({ session_id: sid, role: 'assistant', content: responseMessage, created_at: new Date().toISOString() });
+
+      // Get session logs
+      const sessionLogs = workLogs.filter(l => l.session_id === sid);
 
       return res.status(200).json({
-        message: response.message,
-        follow_up_questions: response.follow_up_questions,
-        needs_clarification: response.needs_clarification,
-        logs,
-        new_logs: response.extracted_logs
+        message: responseMessage,
+        follow_up_questions: followUp,
+        needs_clarification: !taskType && !area,
+        logs: sessionLogs,
+        new_logs: newLogs
       });
     }
 
