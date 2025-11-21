@@ -6,7 +6,9 @@ import HistoryView from './components/HistoryView';
 import QueryView from './components/QueryView';
 
 // Version for debugging deployments
-const APP_VERSION = '2.1.0-demo';
+const APP_VERSION = '2.2.0-demo';
+
+const STAFF_OPTIONS = ['Jim', 'Fred', 'Bob', 'Debbie', 'Dicky'];
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('log');
@@ -15,6 +17,7 @@ function App() {
   const [logs, setLogs] = useState<WorkLog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedStaff, setSelectedStaff] = useState<string>(STAFF_OPTIONS[0]);
 
   // Initialize or resume session
   useEffect(() => {
@@ -92,7 +95,7 @@ function App() {
     setError(null);
 
     try {
-      const response = await sendMessage(session.id, message);
+      const response = await sendMessage(session.id, message, selectedStaff);
 
       // Add assistant response
       const assistantMessage: ChatMessage = {
@@ -134,6 +137,20 @@ function App() {
                   {session ? `Session: ${session.date}` : 'Loading...'}
                 </p>
               </div>
+            </div>
+
+            {/* Staff Selector */}
+            <div className="flex items-center gap-2">
+              <label className="text-grass-200 text-sm">Reporting as:</label>
+              <select
+                value={selectedStaff}
+                onChange={(e) => setSelectedStaff(e.target.value)}
+                className="bg-grass-600 text-white border border-grass-500 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-grass-400"
+              >
+                {STAFF_OPTIONS.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
             </div>
 
             {/* Navigation */}

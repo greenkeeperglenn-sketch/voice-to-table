@@ -45,10 +45,10 @@ export async function endSession(id: string, summary?: string): Promise<void> {
 }
 
 // Chat APIs
-export async function sendMessage(sessionId: string, message: string): Promise<ChatResponse> {
+export async function sendMessage(sessionId: string, message: string, staff?: string): Promise<ChatResponse> {
   return fetchJSON('/chat', {
     method: 'POST',
-    body: JSON.stringify({ session_id: sessionId, message }),
+    body: JSON.stringify({ session_id: sessionId, message, staff }),
   });
 }
 
