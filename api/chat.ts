@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import OpenAI from 'openai';
 
 // Inline storage
 const chatMessages: { session_id: string; role: string; content: string; created_at: string }[] = [];
-const workLogs: { id: string; session_id: string; date: string; task_description: string; created_at: string }[] = [];
+const workLogs: any[] = [];
 
 function generateId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -12,11 +13,29 @@ function generateId(): string {
   });
 }
 
-// Simple pattern matching for work log extraction
-function extractWorkInfo(message: string) {
-  const lowerMsg = message.toLowerCase();
+const SYSTEM_PROMPT = `You are a helpful assistant for grounds maintenance staff. Your job is to:
+1. Have natural conversations about their daily work
+2. Extract structured data from their descriptions
+3. Ask clarifying questions when needed
 
-  // Detect task types
+When the user describes work, extract these fields when mentioned:
+- area: Location (greens, fairways, rough, lawn, garden, etc.)
+- task_type: Category (mowing, trimming, watering, planting, weeding, repair, etc.)
+- task_description: Brief description
+- machine: Equipment used
+- duration_minutes: How long it took
+- staff: Who did the work
+
+RESPONSE FORMAT (must be valid JSON):
+{
+  "message": "Your conversational response",
+  "extracted_logs": [{ "area": "...", "task_type": "...", "task_description": "..." }],
+  "follow_up_questions": ["Question?"],
+  "needs_clarification": false
+}`;
+
+// Fallback pattern matching when no OpenAI
+function extractWorkInfo(message: string) {
   const taskPatterns = [
     { pattern: /mow|cut|cutting/i, task: 'mowing' },
     { pattern: /trim|trimming/i, task: 'trimming' },
@@ -26,15 +45,6 @@ function extractWorkInfo(message: string) {
     { pattern: /repair|fix/i, task: 'repair' },
   ];
 
-  let taskType = null;
-  for (const { pattern, task } of taskPatterns) {
-    if (pattern.test(lowerMsg)) {
-      taskType = task;
-      break;
-    }
-  }
-
-  // Detect areas
   const areaPatterns = [
     { pattern: /green[s]?/i, area: 'greens' },
     { pattern: /fairway[s]?/i, area: 'fairways' },
@@ -43,31 +53,79 @@ function extractWorkInfo(message: string) {
     { pattern: /garden/i, area: 'garden' },
   ];
 
+  let taskType = null;
+  for (const { pattern, task } of taskPatterns) {
+    if (pattern.test(message)) { taskType = task; break; }
+  }
+
   let area = null;
-  for (const { pattern, area: areaName } of areaPatterns) {
-    if (pattern.test(lowerMsg)) {
-      area = areaName;
-      break;
-    }
+  for (const { pattern, area: a } of areaPatterns) {
+    if (pattern.test(message)) { area = a; break; }
   }
 
   return { taskType, area };
+}
+
+async function processWithOpenAI(messages: { role: string; content: string }[], currentDate: string) {
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: `${SYSTEM_PROMPT}\n\nToday's date: ${currentDate}` },
+      ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+    ],
+    temperature: 0.7,
+    response_format: { type: 'json_object' }
+  });
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error('No response from AI');
+
+  return JSON.parse(content);
+}
+
+function processFallback(message: string, currentDate: string) {
+  const { taskType, area } = extractWorkInfo(message);
+  const logs = [];
+  const followUp = [];
+
+  if (taskType || area) {
+    logs.push({ area, task_type: taskType, task_description: message, date: currentDate });
+  }
+
+  let responseMessage = "Got it!";
+  if (taskType && area) {
+    responseMessage = `Logged: ${taskType} on ${area}. Anything else?`;
+  } else if (taskType) {
+    responseMessage = `Logged: ${taskType}. Which area?`;
+    followUp.push("Which area did you work on?");
+  } else if (area) {
+    responseMessage = `Working on ${area}. What did you do?`;
+    followUp.push("What work did you do?");
+  } else {
+    responseMessage = "Tell me what work you did and where.";
+    followUp.push("What work did you do today?");
+  }
+
+  return {
+    message: responseMessage,
+    extracted_logs: logs,
+    follow_up_questions: followUp,
+    needs_clarification: !taskType && !area
+  };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { session_id } = req.query;
 
-    // GET - return chat history
     if (req.method === 'GET' && session_id && typeof session_id === 'string') {
-      const messages = chatMessages.filter(m => m.session_id === session_id);
-      return res.status(200).json(messages);
+      return res.status(200).json(chatMessages.filter(m => m.session_id === session_id));
     }
 
-    // POST - process message
     if (req.method === 'POST') {
       const { session_id: sid, message } = req.body;
-
       if (!sid || !message) {
         return res.status(400).json({ error: 'session_id and message are required' });
       }
@@ -78,53 +136,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Store user message
       chatMessages.push({ session_id: sid, role: 'user', content: message, created_at: now });
 
-      // Extract work info from message
-      const { taskType, area } = extractWorkInfo(message);
+      // Get chat history for this session
+      const history = chatMessages.filter(m => m.session_id === sid);
 
-      // Create work log if we detected something
-      const newLogs = [];
-      if (taskType || area) {
-        const log = {
-          id: generateId(),
-          session_id: sid,
-          date: currentDate,
-          task_type: taskType,
-          area: area,
-          task_description: message,
-          created_at: now
-        };
-        workLogs.push(log as any);
-        newLogs.push(log);
-      }
-
-      // Generate response
-      let responseMessage = "Got it! I've recorded your work.";
-      const followUp = [];
-
-      if (taskType && area) {
-        responseMessage = `Logged: ${taskType} on ${area}. Anything else to add?`;
-      } else if (taskType) {
-        responseMessage = `Logged: ${taskType}. Which area was this?`;
-        followUp.push("Which area did you work on?");
-      } else if (area) {
-        responseMessage = `Working on ${area}. What did you do there?`;
-        followUp.push("What work did you do?");
+      // Process with OpenAI or fallback
+      let response;
+      if (process.env.OPENAI_API_KEY) {
+        try {
+          response = await processWithOpenAI(history, currentDate);
+        } catch (e) {
+          console.error('OpenAI error, using fallback:', e);
+          response = processFallback(message, currentDate);
+        }
       } else {
-        responseMessage = "I'd like to help log your work. Could you tell me what you did and where?";
-        followUp.push("What work did you do today?");
+        response = processFallback(message, currentDate);
       }
 
       // Store assistant response
-      chatMessages.push({ session_id: sid, role: 'assistant', content: responseMessage, created_at: new Date().toISOString() });
+      chatMessages.push({ session_id: sid, role: 'assistant', content: response.message, created_at: new Date().toISOString() });
 
-      // Get session logs
-      const sessionLogs = workLogs.filter(l => l.session_id === sid);
+      // Store extracted work logs
+      const newLogs = [];
+      if (response.extracted_logs?.length > 0) {
+        for (const log of response.extracted_logs) {
+          const fullLog = {
+            id: generateId(),
+            session_id: sid,
+            date: log.date || currentDate,
+            ...log,
+            created_at: now
+          };
+          workLogs.push(fullLog);
+          newLogs.push(fullLog);
+        }
+      }
 
       return res.status(200).json({
-        message: responseMessage,
-        follow_up_questions: followUp,
-        needs_clarification: !taskType && !area,
-        logs: sessionLogs,
+        message: response.message,
+        follow_up_questions: response.follow_up_questions || [],
+        needs_clarification: response.needs_clarification || false,
+        logs: workLogs.filter(l => l.session_id === sid),
         new_logs: newLogs
       });
     }
