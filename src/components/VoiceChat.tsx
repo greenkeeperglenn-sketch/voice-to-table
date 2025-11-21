@@ -70,13 +70,20 @@ export default function VoiceChat({ onTranscript, onConversationEnd, staff }: Vo
         setIsListening(true);
         setStatus('Connected - speak now!');
 
-        // Send session update with context
+        // Send session update with context and enable transcription
         dc.send(JSON.stringify({
           type: 'session.update',
           session: {
+            input_audio_transcription: {
+              model: 'whisper-1'
+            },
             instructions: `You are helping ${staff} log their grounds maintenance work today.
-Ask about what they worked on, where, what equipment they used, and how long it took.
-Keep responses short and conversational. When you have enough info about a task, summarize what you logged.`
+Ask about what they did, where, equipment used, duration, and cutting heights.
+Keep responses short and conversational. Summarize what you logged after each task.
+
+IMPORTANT: When they say goodbye or seem done, ask:
+"Before you go - would you like a motivational quote or a joke to brighten your day?"
+Then give them whichever they choose.`
           }
         }));
       };

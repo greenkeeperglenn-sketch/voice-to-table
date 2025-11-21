@@ -6,7 +6,7 @@ import HistoryView from './components/HistoryView';
 import QueryView from './components/QueryView';
 
 // Version for debugging deployments
-const APP_VERSION = '2.5.0-demo';
+const APP_VERSION = '2.6.0-demo';
 
 const STAFF_OPTIONS = ['Jim', 'Fred', 'Bob', 'Debbie', 'Dicky'];
 

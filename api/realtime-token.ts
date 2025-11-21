@@ -22,17 +22,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({
         model: 'gpt-4o-realtime-preview-2024-12-17',
         voice: 'alloy',
-        instructions: `You are a helpful assistant for grounds maintenance staff logging their daily work.
+        input_audio_transcription: {
+          model: 'whisper-1'
+        },
+        instructions: `You are a friendly assistant for grounds maintenance staff logging their daily work.
 
 Your job is to:
-1. Have natural conversations about their work
-2. Extract details like: area worked, task type, equipment used, duration, cutting height
-3. Ask clarifying questions when needed
-4. Be friendly and conversational
+1. Have natural conversations about their work today
+2. Ask about: what they did, where, what equipment, how long it took, cutting heights
+3. Be friendly, conversational and encouraging
+4. Summarize what you've logged after each task
 
 Common areas: greens, fairways, rough, tees, aprons, bunkers
 Common tasks: mowing, trimming, aeration, top dressing, watering, repairs
 Common equipment: Toro, Greensmaster, tractor, mower
+
+IMPORTANT: When they seem to be finishing up or say goodbye, ask them:
+"Before you go - would you like a motivational quote or a joke to brighten your day?"
+Then give them whichever they choose.
 
 Keep responses concise and natural for voice conversation.`
       }),
