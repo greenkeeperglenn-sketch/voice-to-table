@@ -1,22 +1,30 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDatabase, initDatabase } from './lib/database';
 import { v4 as uuidv4 } from 'uuid';
+import * as demo from './lib/demo-storage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    await initDatabase();
-    const db = getDatabase();
+    const isDemoMode = demo.isDemoMode();
 
-    // GET /api/sessions - list sessions
-    // POST /api/sessions - create session
-    // GET /api/sessions?id=xxx - get single session
-    // PATCH /api/sessions?id=xxx&action=end - end session
+    if (!isDemoMode) {
+      await initDatabase();
+    }
 
     const { id, action } = req.query;
 
     if (req.method === 'GET') {
       if (id && typeof id === 'string') {
         // Get single session
+        if (isDemoMode) {
+          const session = demo.getSession(id);
+          if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+          }
+          return res.status(200).json(session);
+        }
+
+        const db = getDatabase();
         const result = await db.execute({
           sql: 'SELECT * FROM sessions WHERE id = ?',
           args: [id]
@@ -29,6 +37,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // List sessions
       const { date, limit = '30', offset = '0' } = req.query;
+
+      if (isDemoMode) {
+        const sessions = demo.getAllSessions({
+          date: typeof date === 'string' ? date : undefined,
+          limit: Number(limit),
+          offset: Number(offset)
+        });
+        return res.status(200).json(sessions);
+      }
+
+      const db = getDatabase();
       let query = 'SELECT * FROM sessions';
       const params: (string | number)[] = [];
 
@@ -50,6 +69,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const date = new Date().toISOString().split('T')[0];
       const started_at = new Date().toISOString();
 
+      if (isDemoMode) {
+        const session = demo.createSession(newId, date);
+        return res.status(200).json(session);
+      }
+
+      const db = getDatabase();
       await db.execute({
         sql: 'INSERT INTO sessions (id, date, started_at) VALUES (?, ?, ?)',
         args: [newId, date, started_at]
@@ -61,6 +86,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'PATCH' && id && typeof id === 'string') {
       if (action === 'end') {
         const { summary } = req.body || {};
+
+        if (isDemoMode) {
+          demo.endSession(id, summary);
+          return res.status(200).json({ success: true });
+        }
+
+        const db = getDatabase();
         const countResult = await db.execute({
           sql: 'SELECT COUNT(*) as count FROM work_logs WHERE session_id = ?',
           args: [id]
