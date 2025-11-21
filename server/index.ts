@@ -37,33 +37,22 @@ function getToday(): string {
 
 // ============ SESSION ROUTES ============
 
-// Create a new session
-app.post('/api/sessions', (req, res) => {
-  const id = uuidv4();
-  const date = getToday();
-
-  const stmt = db.prepare(`
-    INSERT INTO sessions (id, date, started_at)
-    VALUES (?, ?, datetime('now'))
-  `);
-  stmt.run(id, date);
-
-  res.json({ id, date, started_at: new Date().toISOString() });
-});
-
-// Get session by ID
-app.get('/api/sessions/:id', (req, res) => {
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id) as Session | undefined;
-  if (!session) {
-    return res.status(404).json({ error: 'Session not found' });
-  }
-  res.json(session);
-});
-
-// Get all sessions (for history view)
+// GET /api/sessions - list sessions or get single session by query param ?id=
+// POST /api/sessions - create session
+// PATCH /api/sessions?id=xxx&action=end - end session
 app.get('/api/sessions', (req, res) => {
-  const { date, limit = 30, offset = 0 } = req.query;
+  const { id, date, limit = 30, offset = 0 } = req.query;
 
+  // Get single session by ID query param
+  if (id && typeof id === 'string') {
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as Session | undefined;
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    return res.json(session);
+  }
+
+  // List all sessions
   let query = 'SELECT * FROM sessions';
   const params: (string | number)[] = [];
 
@@ -79,26 +68,67 @@ app.get('/api/sessions', (req, res) => {
   res.json(sessions);
 });
 
-// End a session
-app.patch('/api/sessions/:id/end', (req, res) => {
-  const { summary } = req.body;
-
-  // Count tasks in session
-  const countResult = db.prepare(
-    'SELECT COUNT(*) as count FROM work_logs WHERE session_id = ?'
-  ).get(req.params.id) as { count: number };
+// Create a new session
+app.post('/api/sessions', (req, res) => {
+  const id = uuidv4();
+  const date = getToday();
 
   const stmt = db.prepare(`
-    UPDATE sessions
-    SET ended_at = datetime('now'), summary = ?, total_tasks = ?
-    WHERE id = ?
+    INSERT INTO sessions (id, date, started_at)
+    VALUES (?, ?, datetime('now'))
   `);
-  stmt.run(summary || null, countResult.count, req.params.id);
+  stmt.run(id, date);
 
-  res.json({ success: true });
+  res.json({ id, date, started_at: new Date().toISOString() });
+});
+
+// End a session (using query params to match Vercel API)
+app.patch('/api/sessions', (req, res) => {
+  const { id, action } = req.query;
+
+  if (!id || typeof id !== 'string') {
+    return res.status(400).json({ error: 'Session ID required' });
+  }
+
+  if (action === 'end') {
+    const { summary } = req.body;
+
+    const countResult = db.prepare(
+      'SELECT COUNT(*) as count FROM work_logs WHERE session_id = ?'
+    ).get(id) as { count: number };
+
+    const stmt = db.prepare(`
+      UPDATE sessions
+      SET ended_at = datetime('now'), summary = ?, total_tasks = ?
+      WHERE id = ?
+    `);
+    stmt.run(summary || null, countResult.count, id);
+
+    return res.json({ success: true });
+  }
+
+  res.status(400).json({ error: 'Invalid action' });
 });
 
 // ============ CHAT ROUTES ============
+
+// GET /api/chat?session_id=xxx - get chat history
+// POST /api/chat - send message
+app.get('/api/chat', (req, res) => {
+  const { session_id } = req.query;
+
+  if (!session_id || typeof session_id !== 'string') {
+    return res.status(400).json({ error: 'session_id is required' });
+  }
+
+  const messages = db.prepare(`
+    SELECT * FROM chat_messages
+    WHERE session_id = ?
+    ORDER BY created_at ASC
+  `).all(session_id);
+
+  res.json(messages);
+});
 
 // Process a chat message
 app.post('/api/chat', async (req, res) => {
@@ -190,40 +220,28 @@ app.post('/api/chat', async (req, res) => {
   });
 });
 
-// Get chat history for a session
-app.get('/api/chat/:session_id', (req, res) => {
-  const messages = db.prepare(`
-    SELECT * FROM chat_messages
-    WHERE session_id = ?
-    ORDER BY created_at ASC
-  `).all(req.params.session_id);
-
-  res.json(messages);
-});
-
 // ============ WORK LOG ROUTES ============
 
-// Get logs for a session
-app.get('/api/logs/session/:session_id', (req, res) => {
-  const logs = db.prepare(`
-    SELECT * FROM work_logs WHERE session_id = ? ORDER BY created_at ASC
-  `).all(req.params.session_id);
-
-  res.json(logs);
-});
-
-// Get logs by date
-app.get('/api/logs/date/:date', (req, res) => {
-  const logs = db.prepare(`
-    SELECT * FROM work_logs WHERE date = ? ORDER BY created_at ASC
-  `).all(req.params.date);
-
-  res.json(logs);
-});
-
-// Get all logs with filtering
+// GET /api/logs - get logs with optional filters
+// Supports: session_id, date, date_from, date_to, area, machine, staff, task_type
 app.get('/api/logs', (req, res) => {
-  const { date_from, date_to, area, machine, staff, task_type, limit = 100, offset = 0 } = req.query;
+  const { session_id, date, date_from, date_to, area, machine, staff, task_type, limit = 100, offset = 0 } = req.query;
+
+  // Get logs for a specific session
+  if (session_id && typeof session_id === 'string') {
+    const logs = db.prepare(`
+      SELECT * FROM work_logs WHERE session_id = ? ORDER BY created_at ASC
+    `).all(session_id);
+    return res.json(logs);
+  }
+
+  // Get logs for a specific date
+  if (date && typeof date === 'string') {
+    const logs = db.prepare(`
+      SELECT * FROM work_logs WHERE date = ? ORDER BY created_at ASC
+    `).all(date);
+    return res.json(logs);
+  }
 
   let query = 'SELECT * FROM work_logs WHERE 1=1';
   const params: (string | number)[] = [];
@@ -260,9 +278,12 @@ app.get('/api/logs', (req, res) => {
   res.json(logs);
 });
 
-// Update a specific log
-app.patch('/api/logs/:id', (req, res) => {
-  const { id } = req.params;
+// Update a specific log (using query param ?id=)
+app.patch('/api/logs', (req, res) => {
+  const { id } = req.query;
+  if (!id || typeof id !== 'string') {
+    return res.status(400).json({ error: 'Log ID required' });
+  }
   const updates = req.body;
 
   const allowedFields = [
@@ -297,10 +318,15 @@ app.patch('/api/logs/:id', (req, res) => {
   res.json(updated);
 });
 
-// Delete a log
-app.delete('/api/logs/:id', (req, res) => {
+// Delete a log (using query param ?id=)
+app.delete('/api/logs', (req, res) => {
+  const { id } = req.query;
+  if (!id || typeof id !== 'string') {
+    return res.status(400).json({ error: 'Log ID required' });
+  }
+
   const stmt = db.prepare('DELETE FROM work_logs WHERE id = ?');
-  const result = stmt.run(req.params.id);
+  const result = stmt.run(id);
 
   res.json({ deleted: result.changes > 0 });
 });
@@ -403,9 +429,28 @@ app.post('/api/query', async (req, res) => {
 
 // ============ STATS ROUTES ============
 
-// Get summary statistics
+// Get summary statistics or distinct values
+// GET /api/stats - get stats
+// GET /api/stats?field=xxx - get distinct values for a field
 app.get('/api/stats', (req, res) => {
-  const { date_from, date_to } = req.query;
+  const { date_from, date_to, field } = req.query;
+
+  // Return distinct values if field is specified
+  if (field && typeof field === 'string') {
+    const allowedFields = ['area', 'machine', 'staff', 'task_type', 'issue_type'];
+    if (!allowedFields.includes(field)) {
+      return res.status(400).json({ error: 'Invalid field' });
+    }
+
+    const values = db.prepare(`
+      SELECT DISTINCT ${field} as value
+      FROM work_logs
+      WHERE ${field} IS NOT NULL
+      ORDER BY ${field}
+    `).all();
+
+    return res.json(values.map((v: { value: string }) => v.value));
+  }
 
   let dateFilter = '';
   const params: string[] = [];
