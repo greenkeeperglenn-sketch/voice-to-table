@@ -38,6 +38,10 @@ export default function LogView({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [queryTranscripts, setQueryTranscripts] = useState<{text: string, isUser: boolean}[]>([]);
 
+  // Positives and Red Flags extracted from conversations
+  const [positives, setPositives] = useState<string[]>([]);
+  const [redFlags, setRedFlags] = useState<string[]>([]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const lastMessageCountRef = useRef(0);
@@ -68,13 +72,73 @@ export default function LogView({
     }
     setIsProcessingVoice(true);
     const userMessages = voiceTranscripts.filter(t => t.isUser).map(t => t.text).join('. ');
+    const fullConversation = voiceTranscripts.map(t => `${t.isUser ? 'User' : 'AI'}: ${t.text}`).join(' ');
+
     if (userMessages.trim()) {
       const summaryMessage = `Voice conversation summary - please extract all work logs from this: ${userMessages}`;
       await onSendMessage(summaryMessage);
+
+      // Extract positives and red flags from the conversation
+      extractInsights(fullConversation);
+
       // Clear transcripts after successful commit
       setVoiceTranscripts([]);
     }
     setIsProcessingVoice(false);
+  }
+
+  // Extract positives and red flags from conversation text
+  function extractInsights(conversation: string) {
+    const text = conversation.toLowerCase();
+    const newPositives: string[] = [];
+    const newRedFlags: string[] = [];
+
+    // Positive patterns
+    if (text.includes('completed') || text.includes('finished') || text.includes('done')) {
+      newPositives.push('Tasks completed successfully');
+    }
+    if (text.includes('good condition') || text.includes('looks good') || text.includes('looking good')) {
+      newPositives.push('Course in good condition');
+    }
+    if (text.includes('ahead of schedule') || text.includes('early')) {
+      newPositives.push('Ahead of schedule');
+    }
+    if (text.includes('no issues') || text.includes('no problems')) {
+      newPositives.push('No issues reported');
+    }
+    if (text.includes('repaired') || text.includes('fixed')) {
+      newPositives.push('Repairs completed');
+    }
+
+    // Red flag patterns
+    if (text.includes('broken') || text.includes('not working') || text.includes('malfunction')) {
+      newRedFlags.push('Equipment issue reported');
+    }
+    if (text.includes('damage') || text.includes('damaged')) {
+      newRedFlags.push('Damage identified');
+    }
+    if (text.includes('leak') || text.includes('leaking')) {
+      newRedFlags.push('Leak detected');
+    }
+    if (text.includes('disease') || text.includes('fungus') || text.includes('pest')) {
+      newRedFlags.push('Turf health concern');
+    }
+    if (text.includes('dry') || text.includes('drought') || text.includes('brown')) {
+      newRedFlags.push('Irrigation/watering concern');
+    }
+    if (text.includes('delay') || text.includes('behind schedule')) {
+      newRedFlags.push('Schedule delay');
+    }
+    if (text.includes('safety') || text.includes('hazard') || text.includes('dangerous')) {
+      newRedFlags.push('Safety concern');
+    }
+    if (text.includes('complaint') || text.includes('complained')) {
+      newRedFlags.push('Complaint received');
+    }
+
+    // Add new insights without duplicates
+    setPositives(prev => [...new Set([...prev, ...newPositives])]);
+    setRedFlags(prev => [...new Set([...prev, ...newRedFlags])]);
   }
 
   // Build logs context for query mode
@@ -335,6 +399,54 @@ export default function LogView({
                 <h3 className="font-semibold text-gray-800">{formatDate(displayDate)}</h3>
                 <p className="text-sm text-gray-500">{logsForDate.length} entries</p>
               </div>
+
+              {/* Positives and Red Flags boxes */}
+              {(positives.length > 0 || redFlags.length > 0) && (
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  {/* Positives Box */}
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold text-green-800 text-sm flex items-center gap-1">
+                        ✅ Positives
+                      </h4>
+                      <button onClick={() => setPositives([])} className="text-xs text-green-600 hover:text-green-800">Clear</button>
+                    </div>
+                    {positives.length === 0 ? (
+                      <p className="text-green-600 text-xs">No positives yet</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {positives.map((p, i) => (
+                          <li key={i} className="text-green-700 text-xs flex items-start gap-1">
+                            <span className="text-green-500">•</span> {p}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  {/* Red Flags Box */}
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold text-red-800 text-sm flex items-center gap-1">
+                        🚩 Red Flags
+                      </h4>
+                      <button onClick={() => setRedFlags([])} className="text-xs text-red-600 hover:text-red-800">Clear</button>
+                    </div>
+                    {redFlags.length === 0 ? (
+                      <p className="text-red-600 text-xs">No concerns flagged</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {redFlags.map((r, i) => (
+                          <li key={i} className="text-red-700 text-xs flex items-start gap-1">
+                            <span className="text-red-500">⚠</span> {r}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {logsForDate.length === 0 ? (
                 <div className="text-center text-gray-400 mt-8">
                   <div className="text-4xl mb-2">📋</div>

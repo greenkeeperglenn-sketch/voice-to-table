@@ -4,7 +4,7 @@ import { createSession, sendMessage, getSessionLogs, getChatHistory } from './ap
 import LogView from './components/LogView';
 
 // Version for debugging deployments
-const APP_VERSION = '3.1.0-demo';
+const APP_VERSION = '3.2.0-demo';
 
 const STAFF_OPTIONS = ['Jim', 'Fred', 'Bob', 'Debbie', 'Dicky'];
 
@@ -142,7 +142,19 @@ function App() {
         content: response.message,
       };
       setMessages(prev => [...prev, assistantMessage]);
-      setLogs(response.logs);
+
+      // Merge new logs with existing instead of replacing
+      // This preserves logs from other staff members
+      if (response.new_logs && response.new_logs.length > 0) {
+        setLogs(prev => [...prev, ...response.new_logs]);
+      } else if (response.logs) {
+        // If no new_logs, merge based on IDs to avoid duplicates
+        setLogs(prev => {
+          const existingIds = new Set(prev.map(l => l.id));
+          const newLogs = response.logs.filter((l: WorkLog) => !existingIds.has(l.id));
+          return [...prev, ...newLogs];
+        });
+      }
     } catch (err) {
       setError('Failed to send message. Please try again.');
       console.error(err);
