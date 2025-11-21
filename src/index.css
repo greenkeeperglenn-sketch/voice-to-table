@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Smooth animations */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Table styles */
+.log-table {
+  @apply w-full text-sm;
+}
+
+.log-table th {
+  @apply bg-grass-50 text-grass-800 font-semibold text-left p-2 border-b border-grass-200;
+}
+
+.log-table td {
+  @apply p-2 border-b border-gray-100;
+}
+
+.log-table tr:hover {
+  @apply bg-grass-50/50;
+}
+
+/* Chat bubble styles */
+.chat-bubble-user {
+  @apply bg-grass-600 text-white rounded-2xl rounded-br-md px-4 py-2 max-w-[80%] ml-auto;
+}
+
+.chat-bubble-assistant {
+  @apply bg-gray-100 text-gray-800 rounded-2xl rounded-bl-md px-4 py-2 max-w-[80%];
+}
