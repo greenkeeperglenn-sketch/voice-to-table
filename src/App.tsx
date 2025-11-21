@@ -6,7 +6,7 @@ import HistoryView from './components/HistoryView';
 import QueryView from './components/QueryView';
 
 // Version for debugging deployments
-const APP_VERSION = '2.3.0-demo';
+const APP_VERSION = '2.4.0-demo';
 
 const STAFF_OPTIONS = ['Jim', 'Fred', 'Bob', 'Debbie', 'Dicky'];
 
@@ -236,6 +236,7 @@ function App() {
             isLoading={isLoading}
             onSendMessage={handleSendMessage}
             onLogsUpdate={setLogs}
+            staff={selectedStaff}
           />
         )}
         {currentView === 'history' && <HistoryView />}
