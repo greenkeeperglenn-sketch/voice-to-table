@@ -1,6 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { v4 as uuidv4 } from 'uuid';
-import * as demo from './lib/demo-storage';
+
+// Inline session storage - no external imports
+const sessions = new Map<string, { id: string; date: string; started_at: string }>();
+
+function generateId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -8,33 +17,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'GET') {
       if (id && typeof id === 'string') {
-        const session = demo.getSession(id);
+        const session = sessions.get(id);
         if (!session) {
           return res.status(404).json({ error: 'Session not found' });
         }
         return res.status(200).json(session);
       }
-
-      const { date, limit = '30', offset = '0' } = req.query;
-      const sessions = demo.getAllSessions({
-        date: typeof date === 'string' ? date : undefined,
-        limit: Number(limit),
-        offset: Number(offset)
-      });
-      return res.status(200).json(sessions);
+      return res.status(200).json(Array.from(sessions.values()));
     }
 
     if (req.method === 'POST') {
-      const newId = uuidv4();
+      const newId = generateId();
       const date = new Date().toISOString().split('T')[0];
-      const session = demo.createSession(newId, date);
+      const session = { id: newId, date, started_at: new Date().toISOString() };
+      sessions.set(newId, session);
       return res.status(200).json(session);
     }
 
     if (req.method === 'PATCH' && id && typeof id === 'string') {
       if (action === 'end') {
-        const { summary } = req.body || {};
-        demo.endSession(id, summary);
         return res.status(200).json({ success: true });
       }
     }
