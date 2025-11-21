@@ -1,12 +1,22 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 interface VoiceChatProps {
   onTranscript: (text: string, isUser: boolean) => void;
   onConversationEnd?: () => void;
+  onCommitToTaskBoard?: () => void;
   staff: string;
+  mode?: 'log' | 'query';
+  logsContext?: string;  // For query mode - summary of logs to query
 }
 
-export default function VoiceChat({ onTranscript, onConversationEnd, staff }: VoiceChatProps) {
+export default function VoiceChat({
+  onTranscript,
+  onConversationEnd,
+  onCommitToTaskBoard,
+  staff,
+  mode = 'log',
+  logsContext = ''
+}: VoiceChatProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -18,19 +28,40 @@ export default function VoiceChat({ onTranscript, onConversationEnd, staff }: Vo
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  // Clean up on unmount
   useEffect(() => {
-    return () => {
-      disconnect();
-    };
+    return () => { disconnect(); };
   }, []);
+
+  const getInstructions = () => {
+    if (mode === 'query') {
+      return `You are a helpful assistant answering questions about grounds maintenance work history.
+
+Here is the work log data you have access to:
+${logsContext}
+
+Answer questions about this data conversationally. You can:
+- Tell them who did the most work
+- Summarize tasks by area, type, or staff member
+- Find patterns or trends
+- Answer specific questions about dates or tasks
+
+Keep responses concise and conversational for voice. If you don't have enough data to answer, say so.`;
+    }
+
+    return `You are helping ${staff} log their grounds maintenance work today.
+Ask about what they did, where, equipment used, duration, and cutting heights.
+Keep responses short and conversational. Summarize what you logged after each task.
+
+IMPORTANT: When they say goodbye or seem done, ask:
+"Before you go - would you like a motivational quote or a joke to brighten your day?"
+Then give them whichever they choose.`;
+  };
 
   async function connect() {
     setError(null);
     setStatus('Connecting...');
 
     try {
-      // Get ephemeral token from our API
       const tokenResponse = await fetch('/api/realtime-token', { method: 'POST' });
       if (!tokenResponse.ok) {
         const err = await tokenResponse.json();
@@ -42,11 +73,9 @@ export default function VoiceChat({ onTranscript, onConversationEnd, staff }: Vo
         throw new Error('No token received from server');
       }
 
-      // Create peer connection
       const pc = new RTCPeerConnection();
       peerConnectionRef.current = pc;
 
-      // Set up audio element for AI responses
       const audioEl = document.createElement('audio');
       audioEl.autoplay = true;
       audioElementRef.current = audioEl;
@@ -56,12 +85,10 @@ export default function VoiceChat({ onTranscript, onConversationEnd, staff }: Vo
         setIsSpeaking(true);
       };
 
-      // Get microphone access
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      // Create data channel for events
       const dc = pc.createDataChannel('oai-events');
       dataChannelRef.current = dc;
 
@@ -70,20 +97,11 @@ export default function VoiceChat({ onTranscript, onConversationEnd, staff }: Vo
         setIsListening(true);
         setStatus('Connected - speak now!');
 
-        // Send session update with context and enable transcription
         dc.send(JSON.stringify({
           type: 'session.update',
           session: {
-            input_audio_transcription: {
-              model: 'whisper-1'
-            },
-            instructions: `You are helping ${staff} log their grounds maintenance work today.
-Ask about what they did, where, equipment used, duration, and cutting heights.
-Keep responses short and conversational. Summarize what you logged after each task.
-
-IMPORTANT: When they say goodbye or seem done, ask:
-"Before you go - would you like a motivational quote or a joke to brighten your day?"
-Then give them whichever they choose.`
+            input_audio_transcription: { model: 'whisper-1' },
+            instructions: getInstructions()
           }
         }));
       };
@@ -99,7 +117,6 @@ Then give them whichever they choose.`
         setStatus('Disconnected');
       };
 
-      // Create and send offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
@@ -151,7 +168,6 @@ Then give them whichever they choose.`
     setIsSpeaking(false);
     setStatus('Click to start voice conversation');
 
-    // Notify parent that conversation ended so it can process logs
     if (wasConnected && onConversationEnd) {
       onConversationEnd();
     }
@@ -160,14 +176,12 @@ Then give them whichever they choose.`
   function handleRealtimeEvent(event: any) {
     switch (event.type) {
       case 'conversation.item.input_audio_transcription.completed':
-        // User's speech transcribed
         if (event.transcript) {
           onTranscript(event.transcript, true);
         }
         break;
 
       case 'response.audio_transcript.done':
-        // AI's response transcribed
         if (event.transcript) {
           onTranscript(event.transcript, false);
         }
@@ -184,7 +198,6 @@ Then give them whichever they choose.`
 
       case 'input_audio_buffer.speech_started':
         setIsListening(true);
-        // Interrupt if AI is speaking
         if (isSpeaking && dataChannelRef.current) {
           dataChannelRef.current.send(JSON.stringify({ type: 'response.cancel' }));
         }
@@ -209,10 +222,12 @@ Then give them whichever they choose.`
   }
 
   return (
-    <div className="bg-gradient-to-br from-grass-50 to-grass-100 rounded-xl p-6 border border-grass-200">
+    <div className={`rounded-xl p-6 border ${mode === 'query' ? 'bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200' : 'bg-gradient-to-br from-grass-50 to-grass-100 border-grass-200'}`}>
       <div className="text-center">
-        <h3 className="text-lg font-semibold text-grass-800 mb-2">Voice Conversation</h3>
-        <p className="text-sm text-grass-600 mb-4">{status}</p>
+        <h3 className={`text-lg font-semibold mb-2 ${mode === 'query' ? 'text-blue-800' : 'text-grass-800'}`}>
+          {mode === 'query' ? '🔍 Ask About History' : '🎙️ Voice Conversation'}
+        </h3>
+        <p className={`text-sm mb-4 ${mode === 'query' ? 'text-blue-600' : 'text-grass-600'}`}>{status}</p>
 
         {error && (
           <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
@@ -220,13 +235,13 @@ Then give them whichever they choose.`
           </div>
         )}
 
-        <div className="flex justify-center gap-4">
+        <div className="flex justify-center gap-3 flex-wrap">
           {!isConnected ? (
             <button
               onClick={connect}
-              className="px-8 py-4 bg-grass-600 text-white rounded-full text-lg font-medium hover:bg-grass-700 transition-all transform hover:scale-105 shadow-lg"
+              className={`px-8 py-4 text-white rounded-full text-lg font-medium transition-all transform hover:scale-105 shadow-lg ${mode === 'query' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-grass-600 hover:bg-grass-700'}`}
             >
-              🎙️ Start Conversation
+              🎙️ Start {mode === 'query' ? 'Query' : 'Conversation'}
             </button>
           ) : (
             <>
@@ -248,6 +263,19 @@ Then give them whichever they choose.`
           )}
         </div>
 
+        {/* Commit to Task Board button - only in log mode */}
+        {mode === 'log' && onCommitToTaskBoard && (
+          <div className="mt-4">
+            <button
+              onClick={onCommitToTaskBoard}
+              className="px-6 py-3 bg-grass-700 text-white rounded-lg font-medium hover:bg-grass-800 transition-colors shadow-md"
+            >
+              📋 Commit to Task Board
+            </button>
+            <p className="text-xs text-grass-500 mt-2">Save conversation to work log table</p>
+          </div>
+        )}
+
         {isConnected && (
           <div className="mt-6 flex justify-center items-center gap-4">
             <div className={`flex items-center gap-2 px-4 py-2 rounded-full ${isListening ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -261,9 +289,9 @@ Then give them whichever they choose.`
           </div>
         )}
 
-        <p className="mt-4 text-xs text-grass-500">
+        <p className={`mt-4 text-xs ${mode === 'query' ? 'text-blue-500' : 'text-grass-500'}`}>
           {isConnected
-            ? "Speak naturally - you can interrupt anytime by talking"
+            ? "Speak naturally - you can interrupt anytime"
             : "Uses OpenAI Realtime API for natural conversation"}
         </p>
       </div>

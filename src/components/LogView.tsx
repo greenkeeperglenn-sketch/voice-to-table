@@ -36,12 +36,9 @@ export default function LogView({
   // History panel state
   const [historyMode, setHistoryMode] = useState<'log' | 'query'>('log');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [queryInput, setQueryInput] = useState('');
-  const [queryMessages, setQueryMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([]);
-  const [isQuerying, setIsQuerying] = useState(false);
+  const [queryTranscripts, setQueryTranscripts] = useState<{text: string, isUser: boolean}[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const queryMessagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const lastMessageCountRef = useRef(0);
 
@@ -53,31 +50,42 @@ export default function LogView({
   const displayDate = selectedDate || today;
   const logsForDate = displayDate === today ? logs : allLogs.filter(l => l.date === displayDate);
 
-  // Handle transcripts from realtime voice chat
+  // Handle transcripts from realtime voice chat (log mode)
   function handleVoiceTranscript(text: string, isUser: boolean) {
     setVoiceTranscripts(prev => [...prev, { text, isUser }]);
   }
 
-  // When voice conversation ends, process all transcripts to extract logs
-  async function handleVoiceConversationEnd() {
-    if (voiceTranscripts.length === 0) return;
+  // Handle transcripts from query mode
+  function handleQueryTranscript(text: string, isUser: boolean) {
+    setQueryTranscripts(prev => [...prev, { text, isUser }]);
+  }
+
+  // Manual commit to task board - extracts logs from conversation
+  async function handleCommitToTaskBoard() {
+    if (voiceTranscripts.length === 0) {
+      alert('No conversation to commit. Start talking first!');
+      return;
+    }
     setIsProcessingVoice(true);
     const userMessages = voiceTranscripts.filter(t => t.isUser).map(t => t.text).join('. ');
     if (userMessages.trim()) {
       const summaryMessage = `Voice conversation summary - please extract all work logs from this: ${userMessages}`;
       await onSendMessage(summaryMessage);
+      // Clear transcripts after successful commit
+      setVoiceTranscripts([]);
     }
     setIsProcessingVoice(false);
   }
+
+  // Build logs context for query mode
+  const logsContext = allLogs.slice(0, 100).map(l =>
+    `${l.date}: ${l.staff} - ${l.task_type} on ${l.area}${l.machine ? ` using ${l.machine}` : ''}${l.duration_minutes ? ` (${l.duration_minutes}min)` : ''}`
+  ).join('\n');
 
   // Auto-scroll messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  useEffect(() => {
-    queryMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [queryMessages]);
 
   // Speak new assistant messages
   useEffect(() => {
@@ -168,98 +176,6 @@ export default function LogView({
     }
   }
 
-  // Query the historical data
-  async function handleQuerySubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!queryInput.trim() || isQuerying) return;
-
-    const question = queryInput.trim();
-    setQueryInput('');
-    setQueryMessages(prev => [...prev, { role: 'user', content: question }]);
-    setIsQuerying(true);
-
-    try {
-      // Build context from all logs
-      const logsContext = allLogs.map(l =>
-        `${l.date}: ${l.staff} - ${l.task_type} on ${l.area}${l.machine ? ` using ${l.machine}` : ''}${l.duration_minutes ? ` (${l.duration_minutes}min)` : ''}`
-      ).join('\n');
-
-      const response = await fetch('/api/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question,
-          context: logsContext,
-          logs: allLogs
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setQueryMessages(prev => [...prev, { role: 'assistant', content: data.answer }]);
-        if (autoSpeak) speakText(data.answer);
-      } else {
-        // Fallback: simple local search
-        const answer = searchLogs(question, allLogs);
-        setQueryMessages(prev => [...prev, { role: 'assistant', content: answer }]);
-        if (autoSpeak) speakText(answer);
-      }
-    } catch (err) {
-      const answer = searchLogs(question, allLogs);
-      setQueryMessages(prev => [...prev, { role: 'assistant', content: answer }]);
-      if (autoSpeak) speakText(answer);
-    } finally {
-      setIsQuerying(false);
-    }
-  }
-
-  // Simple local search fallback
-  function searchLogs(question: string, logs: WorkLog[]): string {
-    const q = question.toLowerCase();
-
-    // Check for specific queries
-    if (q.includes('how many') || q.includes('count')) {
-      if (q.includes('mow')) {
-        const count = logs.filter(l => l.task_type?.toLowerCase().includes('mow')).length;
-        return `There were ${count} mowing tasks recorded.`;
-      }
-      if (q.includes('task') || q.includes('job')) {
-        return `There are ${logs.length} total tasks recorded across all dates.`;
-      }
-    }
-
-    if (q.includes('who') && q.includes('most')) {
-      const staffCounts: Record<string, number> = {};
-      logs.forEach(l => { if (l.staff) staffCounts[l.staff] = (staffCounts[l.staff] || 0) + 1; });
-      const sorted = Object.entries(staffCounts).sort((a, b) => b[1] - a[1]);
-      if (sorted.length > 0) {
-        return `${sorted[0][0]} has done the most work with ${sorted[0][1]} tasks.`;
-      }
-    }
-
-    if (q.includes('last') || q.includes('recent')) {
-      const recent = logs.slice(0, 3);
-      if (recent.length > 0) {
-        return `Recent tasks:\n${recent.map(l => `- ${l.date}: ${l.task_type} on ${l.area} by ${l.staff}`).join('\n')}`;
-      }
-    }
-
-    if (q.includes('green')) {
-      const greenLogs = logs.filter(l => l.area?.toLowerCase().includes('green'));
-      return `Found ${greenLogs.length} tasks on the greens.`;
-    }
-
-    if (q.includes('fairway')) {
-      const fairwayLogs = logs.filter(l => l.area?.toLowerCase().includes('fairway'));
-      return `Found ${fairwayLogs.length} tasks on the fairways.`;
-    }
-
-    // Default response
-    const totalTasks = logs.length;
-    const totalHours = Math.round(logs.reduce((sum, l) => sum + (l.duration_minutes || 0), 0) / 60);
-    return `I found ${totalTasks} tasks totaling approximately ${totalHours} hours of work. Try asking about specific areas, tasks, or who did the most work.`;
-  }
-
   async function handleUpdateLog(id: string, updates: Partial<WorkLog>) {
     try {
       const updated = await updateLog(id, updates);
@@ -313,21 +229,30 @@ export default function LogView({
 
         {useRealtimeVoice ? (
           <div className="flex-1 overflow-y-auto p-4">
-            <VoiceChat onTranscript={handleVoiceTranscript} onConversationEnd={handleVoiceConversationEnd} staff={staff} />
+            <VoiceChat
+              onTranscript={handleVoiceTranscript}
+              onCommitToTaskBoard={handleCommitToTaskBoard}
+              staff={staff}
+              mode="log"
+            />
             {isProcessingVoice && (
-              <div className="mt-4 p-3 bg-blue-50 text-blue-700 rounded-lg text-center">Processing...</div>
+              <div className="mt-4 p-3 bg-blue-50 text-blue-700 rounded-lg text-center">
+                Extracting work logs from conversation...
+              </div>
             )}
             {voiceTranscripts.length > 0 && (
               <div className="mt-4 space-y-2">
                 <div className="flex justify-between">
-                  <h4 className="text-sm font-medium text-gray-600">Transcript:</h4>
-                  <button onClick={() => setVoiceTranscripts([])} className="text-xs text-gray-400">Clear</button>
+                  <h4 className="text-sm font-medium text-gray-600">Transcript ({voiceTranscripts.length} messages):</h4>
+                  <button onClick={() => setVoiceTranscripts([])} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
                 </div>
-                {voiceTranscripts.map((t, i) => (
-                  <div key={i} className={`text-sm p-2 rounded ${t.isUser ? 'bg-grass-50' : 'bg-gray-50'}`}>
-                    <span className="font-medium">{t.isUser ? 'You: ' : 'AI: '}</span>{t.text}
-                  </div>
-                ))}
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {voiceTranscripts.map((t, i) => (
+                    <div key={i} className={`text-sm p-2 rounded ${t.isUser ? 'bg-grass-50' : 'bg-gray-50'}`}>
+                      <span className="font-medium">{t.isUser ? 'You: ' : 'AI: '}</span>{t.text}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -422,46 +347,30 @@ export default function LogView({
             </div>
           </>
         ) : (
-          <>
-            {/* Query Chat */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {queryMessages.length === 0 && (
-                <div className="text-center text-gray-400 mt-8">
-                  <div className="text-4xl mb-2">🔍</div>
-                  <p>Ask questions about work history</p>
-                  <p className="text-sm mt-2">Try: "Who did the most mowing?" or "Show recent tasks on greens"</p>
+          /* Ask History - Two-way voice conversation */
+          <div className="flex-1 overflow-y-auto p-4">
+            <VoiceChat
+              onTranscript={handleQueryTranscript}
+              staff={staff}
+              mode="query"
+              logsContext={logsContext}
+            />
+            {queryTranscripts.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <div className="flex justify-between">
+                  <h4 className="text-sm font-medium text-gray-600">Conversation ({queryTranscripts.length} messages):</h4>
+                  <button onClick={() => setQueryTranscripts([])} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
                 </div>
-              )}
-              {queryMessages.map((msg, idx) => (
-                <div key={idx} className={`fade-in ${msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}`}>
-                  <div className={msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-assistant'}>{msg.content}</div>
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                  {queryTranscripts.map((t, i) => (
+                    <div key={i} className={`text-sm p-2 rounded ${t.isUser ? 'bg-blue-50' : 'bg-gray-50'}`}>
+                      <span className="font-medium">{t.isUser ? 'You: ' : 'AI: '}</span>{t.text}
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {isQuerying && (
-                <div className="flex justify-start">
-                  <div className="chat-bubble-assistant"><span className="animate-pulse">Searching...</span></div>
-                </div>
-              )}
-              <div ref={queryMessagesEndRef} />
-            </div>
-
-            {/* Query Input */}
-            <form onSubmit={handleQuerySubmit} className="p-4 border-t border-gray-200">
-              <div className="flex gap-2">
-                <button type="button" onClick={toggleListening}
-                  className={`p-3 rounded-lg ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 hover:bg-gray-200'}`}>
-                  🎤
-                </button>
-                <input type="text" value={queryInput} onChange={(e) => setQueryInput(e.target.value)}
-                  placeholder={isListening ? 'Listening...' : 'Ask about work history...'}
-                  className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-grass-500" disabled={isQuerying} />
-                <button type="submit" disabled={!queryInput.trim() || isQuerying}
-                  className="px-6 py-2 bg-grass-600 text-white rounded-lg font-medium hover:bg-grass-700 disabled:opacity-50">
-                  Ask
-                </button>
               </div>
-            </form>
-          </>
+            )}
+          </div>
         )}
       </div>
     </div>
